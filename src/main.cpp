@@ -228,9 +228,10 @@ private:
 
         green = {-1, -1};
         red = {-1, -1};
+        double size_green = 0, size_red = 0;
         for (const auto &contour: contours) {
             double area = cv::contourArea(contour);
-            if (area > 300)continue;
+            if (area > 300 || area < 5)continue;
             cv::Rect rect = cv::boundingRect(contour);
 
             double aspectRatio = static_cast<double>(rect.width) / rect.height;
@@ -257,16 +258,30 @@ private:
                     if (r < g)--type; else if (r > g)++type;
                 }
             }
-
-            if (type > 0)green = center;
-            else if (type < 0)red = center;
-            else continue;//无法判别
-
-#if DRAW
-            cv::circle(draw, center, side, {0, type > 0 ? 255.0 : .0, type < 0 ? 255.0 : .0}, 2, cv::LINE_AA);
-#endif
+            auto rate = std::abs(float(type) / float((ty - fy) * (tx - fx)));
+//            IFR_LOG_STREAM("[Pointer]", "rate: " << rate);
+            if (type > 0) {
+                if (area > size_green) {
+                    green = center;
+                    size_green = area;
+                }
+            } else if (type < 0) {
+                if (area > size_red) {
+                    red = center;
+                    size_red = area;
+                }
+            }
         }
 
+
+//        IFR_LOG_STREAM("[Pointer]", "");
+
+#if DRAW
+        if (green.x >= 0 && green.y >= 0)
+            cv::circle(draw, green, 5, {0, 255, 0}, -1, cv::LINE_AA);
+        if (red.x >= 0 && red.y >= 0)
+            cv::circle(draw, red, 5, {0, 0, 255}, -1, cv::LINE_AA);
+#endif
 
         SHOW("pointer", draw);
 
@@ -275,7 +290,7 @@ private:
 public:
     Handler() {
         serial = new serial::Serial(
-                "/dev/ttyTHS0",
+                "/dev/ttyUSB0",
                 115200,
                 serial::Timeout::simpleTimeout(500),
                 static_cast<serial::bytesize_t>(8),
@@ -323,7 +338,8 @@ public:
     }
 
     CV_NODISCARD_STD cv::Point2d follow() const {
-        return red - green;
+        if (red.x < 0 || red.y < 0 || green.x < 0 || green.y < 0)return {};
+        return green - red;
     }
 
     void do_green() {
@@ -361,6 +377,7 @@ void run(bool is_red) {
         }
         IFR_GX_CHECK(GXQBuf(camera.m_hDevice, pFrameBuffer));
 
+        SLEEP(SLEEP_TIME(10.0 / 1000));
 //        cv::waitKey(10);
     }
 }
