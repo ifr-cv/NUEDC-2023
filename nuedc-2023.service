@@ -1,0 +1,19 @@
+#/lib/systemd/system/nuedc-2023.service
+
+[Unit]
+Description=ifr NUEDC 2023 auto start
+After= multi-user.target
+
+[Service]
+#User=root
+#Group=root
+WorkingDirectory=/home/ifr/NUEDC_2023/cmake-build-release-ifr-nx-3
+#StandardOutput=file:/home/ifr/livox_driver_ws/launch/log.txt
+Restart=always
+RestartSec=5
+#ExecStartPre=sudo chmod 777 /dev/ttyTHS0
+#ExecStartPre=sudo chmod 777 /dev/ttyUSB0
+Type=forking
+ExecStart=sudo /bin/bash -c "chmod 777 /dev/tty* && ./NUEDC_2023"
+[Install]
+WantedBy=multi-user.target

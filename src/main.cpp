@@ -185,6 +185,7 @@ private:
             has_bin = false;
         }
         path = max_approx;
+        if (!max_approx.empty()) path.push_back(max_approx[0]);
 
         SHOW("area", draw);
 
@@ -322,6 +323,7 @@ public:
     }
 
     cv::Point2d move_step() {
+        if (red.x < 0 || red.y < 0)return {0, 0};
         if (step < 0) {
             end = red;
             step = 0;
@@ -348,15 +350,68 @@ public:
         IFR_LOG_STREAM("DO", go << ", red = " << red << ", green = " << green << ", path = " << path.size());
         serial->writeT(pkg_move);
     }
+
+    bool do_red() {
+        cv::Point2d go;
+        bool finish = false;
+        if (red.x < 0 || red.y < 0) {
+        } else {
+            go = move_step();
+            finish = go.ddot(go) < min_distance;
+            if (finish)step = -1;
+        }
+        pkg_move.set(go.x, go.y);
+        serial->writeT(pkg_move);
+        IFR_LOG_STREAM("DO",
+                       go << ", red = " << red << ", green = " << green << ", path = " << path.size() << ", finish = "
+                          << (finish ? "true" : "false") << ", step = " << step);
+        return finish;
+    }
+
+private:
+    std::string read_buf;
+public:
+    /**
+     * 尝试读取字符串, 并将maps中对应值设为true
+     * @param maps 关键词到对应值的映射
+     */
+    void tryRead(std::unordered_map<std::string, bool *> &maps) {
+        auto size = serial->available();
+        if (size > 0) {
+            read_buf += serial->read(size);
+            size_t pos = -1;
+            while ((pos = read_buf.find('\n')) != std::string::npos) {
+                size_t start = 0;
+                while (start < pos && read_buf[start] == '\0') start++;
+                auto line = read_buf.substr(start, pos - start);
+                read_buf = read_buf.substr(pos + 1);
+                if (!line.empty()) {
+                    auto &ptr = maps[line];
+                    if (ptr != nullptr && !(*ptr)) {
+                        IFR_LOG_STREAM("serial", "成功读取: " << line);
+                        *ptr = true;
+                    }
+                }
+            }
+            if (read_buf.size() > 256)read_buf = "";
+        }
+    }
 };
 
 
-void run(bool is_red) {
+void run() {
     ifr::Camera camera(2000, false, 100);
     camera.initCamera();
     camera.runCamera();
 
     Handler handler;
+
+    bool is_red = false, is_green = false, is_stop = false;
+    std::unordered_map<std::string, bool *> keyword = {
+            {"1_ihw9jnsh39m", &is_green},
+            {"2_9kitey3yzpd", &is_red},
+            {"3_yp4lmg19kbc", &is_stop},
+    };
     while (true) {
         PGX_FRAME_BUFFER pFrameBuffer;
 
@@ -368,9 +423,13 @@ void run(bool is_red) {
             cv::cuda::GpuMat gpu_src(src.rows, src.cols, src.type(), cuda_src_ptr);
 
             handler.handler(camera.memMapPool, src, gpu_src, true);
-            if (is_red) {
 
-            } else {
+            handler.tryRead(keyword);
+            if ((is_red && is_green) || is_stop)is_red = is_green = is_stop = false;
+            if (is_red) {
+                if (handler.do_red())is_red = false;
+            }
+            if (is_green) {
                 handler.do_green();
             }
 //            IFR_LOG_STREAM("Main", handler.path);
@@ -398,7 +457,7 @@ int main() {
 //    }
 //
 //    return 0;
-    run(false);
+    run();
 
     return 0;
 }

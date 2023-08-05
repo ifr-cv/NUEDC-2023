@@ -27,8 +27,14 @@
       <paths name="ifr-nx-1 (e47b64d5-58cf-459e-a09d-9b6ea156cd42)">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="NUEDC_2023" local="$PROJECT_DIR$" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-1" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-2" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-3" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-ifr-nx-2" />
+          </excludedPaths>
         </serverdata>
       </paths>
       <paths name="ifr-nx-1-remote (c6f380a3-cca6-47dc-bca0-9f1776ed4838)">
@@ -44,7 +50,9 @@
             <mapping deploy="NUEDC_2023" local="$PROJECT_DIR$" />
           </mappings>
           <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-1" />
             <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-2" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-3" />
             <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-ifr-nx-2" />
           </excludedPaths>
         </serverdata>
@@ -52,8 +60,14 @@
       <paths name="ifr-nx-3 (3e2774bf-5d41-4fc8-a885-c9f32afecf3a)">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="NUEDC_2023" local="$PROJECT_DIR$" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-1" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-2" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-release-ifr-nx-3" />
+            <excludedPath local="true" path="$PROJECT_DIR$/cmake-build-debug-ifr-nx-2" />
+          </excludedPaths>
         </serverdata>
       </paths>
     </serverData>
