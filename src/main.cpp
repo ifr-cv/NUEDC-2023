@@ -244,38 +244,37 @@ private:
             const int fx = (std::max)(rect.x - side, 0), fy = (std::max)(rect.y - side, 0);
             const int tx = (std::min)(rect.x + rect.width + side, c_pointer.rows), ty = (std::min)(
                     rect.y + rect.height + side, c_pointer.cols);
+
             for (auto y = fy; y < ty; ++y) {
                 for (auto x = fx; x < tx; ++x) {
                     if (c_pointer.at<uchar>(y, x))continue;//太亮了
-                    const auto &b = c_bin.at<uchar>(y, x);
                     const auto &v = c_HSV[2].at<uchar>(y, x);
-                    if (b && v < 10)continue;//太暗了
+                    if (v < 10)continue;//太暗了
+                    const auto &s = c_HSV[1].at<uchar>(y, x);
+                    if (s < 60)continue;//饱和度太低了(过滤白色)
                     const auto &h = c_HSV[0].at<uchar>(y, x);
 
                     //[black,red,green,blue,white]
                     //[{0,   0,   0}, {0, 255, 255}, {60, 255, 255}, {120, 255, 255}, {0,   0, 255}]
                     auto r = (std::min)(int(h), 180 - h);
                     auto g = std::abs(60 - h);
-                    if (r < g)--type; else if (r > g)++type;
+                    if (r < 10)--type;
+                    else if (g < 10)++type;
                 }
             }
-            auto rate = std::abs(float(type) / float((ty - fy) * (tx - fx)));
-//            IFR_LOG_STREAM("[Pointer]", "rate: " << rate);
-            if (type > 0) {
+
+            if (type > 3) {
                 if (area > size_green) {
                     green = center;
                     size_green = area;
                 }
-            } else if (type < 0) {
+            } else if (type < 3) {
                 if (area > size_red) {
                     red = center;
                     size_red = area;
                 }
             }
         }
-
-
-//        IFR_LOG_STREAM("[Pointer]", "");
 
 #if DRAW
         if (green.x >= 0 && green.y >= 0)
