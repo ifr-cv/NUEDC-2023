@@ -38,8 +38,7 @@ namespace ifr::cuda {
         int i = (int(threadIdx.x) + blockIdx.x * blockDim.x);
         int j = (int(threadIdx.y) + blockIdx.y * blockDim.y);
         if (i >= img.cols || j >= img.rows) return;
-        if (x1 <= i && i <= x2) return;
-        if (y1 <= j && j <= y2) return;
+        if (x1 <= i && i <= x2 && y1 <= j && j <= y2) return;
         img(j, i) = 0;
     }
 
