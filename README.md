@@ -30,3 +30,36 @@
    [![](https://mermaid.ink/svg/pako:eNpdkD1PwlAUhv_KzRmMxpa0hdKPwcEYERIXdZLLcKUXIaG3pLRRJCzGRFAJky44aCTBhY_FiA7wZ2jpz_AC0cHt5r3Pk3POW4e8Y1EwoVB2LvJF4nroZBezqn927pJKEYWtfvT6cEQtzPY3qx6tbCFRDFvToDledIfhy-3i-ksUd1AqG32OgulN0OyFT4McWmaZbDC-WXzPwo_7aPSYwyzF4-D5fU3OJ3ccOuBMZz4bhoO37aDXD1rtaNblaGb5hzZQem3NJ-1_YjrL8V9x3PkTKbNAAJu6NilZ_K46Zghh8IrUphhM_rRogfhlDwNmDY4S33OOaywPpuf6VAC_YhGP7pUIL8AGs0DKVZ5WCAOzDpdgygktphiyltClRFLXVAFqPFTVmKQm9bhu6IaianpDgCvH4b4U0zRDMXRF0WVZUuKSIQC1Sp7jHq6LX_W_GnC6EpZbNH4AxPmnHQ?type=png)](https://mermaid-js.github.io/mermaid-live-editor/edit#pako:eNpdkD1PwlAUhv_KzRmMxpa0hdKPwcEYERIXdZLLcKUXIaG3pLRRJCzGRFAJky44aCTBhY_FiA7wZ2jpz_AC0cHt5r3Pk3POW4e8Y1EwoVB2LvJF4nroZBezqn927pJKEYWtfvT6cEQtzPY3qx6tbCFRDFvToDledIfhy-3i-ksUd1AqG32OgulN0OyFT4McWmaZbDC-WXzPwo_7aPSYwyzF4-D5fU3OJ3ccOuBMZz4bhoO37aDXD1rtaNblaGb5hzZQem3NJ-1_YjrL8V9x3PkTKbNAAJu6NilZ_K46Zghh8IrUphhM_rRogfhlDwNmDY4S33OOaywPpuf6VAC_YhGP7pUIL8AGs0DKVZ5WCAOzDpdgygktphiyltClRFLXVAFqPFTVmKQm9bhu6IaianpDgCvH4b4U0zRDMXRF0WVZUuKSIQC1Sp7jHq6LX_W_GnC6EpZbNH4AxPmnHQ)
    R = Red(`发射红色激光的机器人`) ; G = Green(`发射绿色激光的机器人`) ; S = Stop(`停止所有任务`)
 
+## 串口格式
+
+### 接收
+
+接收三种数据:
+
++ `1_ihw9jnsh39m`: red
++ `2_9kitey3yzpd`: green
++ `3_yp4lmg19kbc`: stop
+
+以字符串形式发送, 以换行符`\n`为结尾, 将忽略字符串两侧的`\0`.  
+成功接收对应字符串将激活对应任务
+
+### 发送
+
+发送云台移动数据包
+
+```cpp
+struct Move {
+   static constexpr const uint8_t HEAD = 0x5D;
+   uint8_t head = HEAD;
+   char m = 'm';
+   uint16_t x;
+   uint16_t y;
+   char r_m = 'm';
+   uint16_t r_x;
+   uint16_t r_y;
+};
+```
+
+头帧为`0x5D`, `m`为固定字符。  
+`x`,`y`为移动误差, 范围为`[0,65535]`, `32767`为中间值, 即为无误差。  
+数据校验采用重复数据方式, 及数据域以同样值发送第二遍(不包括头帧)。
