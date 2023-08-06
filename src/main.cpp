@@ -16,8 +16,8 @@
 static_assert(__OS__ == __OS_Linux__);
 
 
-#define TIME 0
-#define DRAW 0
+#define TIME 0 // 是否启用时间调试
+#define DRAW 0 // 是否启用绘图调试
 
 #if TIME
 #define REC_T(t) const auto ___time_rec___##t = cv::getTickCount()
@@ -40,23 +40,24 @@ std::string createWindow(const std::string &name) {
 #endif
 
 
+/// 处理器, 包含NUEDC 2023 E题所有视觉处理的功能
 class Handler {
-#define PAIR_MAT(name) cv::Mat c_##name;cv::cuda::GpuMat g_##name
-#define PM_MALLOC(name)   memMapPool.malloc(c_##name, g_##name, src.size(), src.type())
+#define PAIR_MAT(name) cv::Mat c_##name;cv::cuda::GpuMat g_##name \
+/// 声明一对儿cpu/gpu mat
+#define PM_MALLOC(name)   memMapPool.malloc(c_##name, g_##name, src.size(), src.type()) \
+/// 使用内存映射池为cpu/gpu mat构建映射关系
 public:
     cv::Point2d green, red;//激光位置
     std::vector<cv::Point> path;//路径
 private:
-    int step = -1;
-    cv::Point2d end;
-    serial::Serial *serial = nullptr;
+    serial::Serial *serial;
     ifr::pkg::Move pkg_move;
 
-    const double min_distance = std::pow(20.0, 2);
 
-
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(10, 10));
-    cv::Ptr<cv::cuda::Filter> filter = cv::cuda::createMorphologyFilter(cv::MORPH_OPEN, CV_8UC1, kernel);
+    cv::Mat kernel1 = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(10, 10));
+    cv::Ptr<cv::cuda::Filter> filter1 = cv::cuda::createMorphologyFilter(cv::MORPH_OPEN, CV_8UC1, kernel1);
+    cv::Mat kernel2 = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+    cv::Ptr<cv::cuda::Filter> filter2 = cv::cuda::createMorphologyFilter(cv::MORPH_DILATE, CV_8UC1, kernel2);
 private:
 #if DRAW
 
@@ -101,7 +102,7 @@ private:
         REC_T(1);
         cv::threshold(c_gray, c_otsu, 30, 255, cv::THRESH_OTSU);
         REC_T(2);
-        filter->apply(g_otsu, g_bin);
+        filter1->apply(g_otsu, g_bin);
 
 
         REC_T(3);
@@ -205,6 +206,7 @@ private:
     PAIR_MAT(hsv);
     PAIR_MAT(HSV[3]);
     PAIR_MAT(pointer);
+    cv::cuda::GpuMat g_pointer_raw;
 
     inline auto findPointer(rm_armor_finder::MemMapPool &memMapPool, const cv::Mat &src, const cv::cuda::GpuMat &gpu) {
         PM_MALLOC(hsv);
@@ -212,12 +214,13 @@ private:
         for (int i = 0; i < 3; i++)
             PM_MALLOC(HSV[i]);
         PM_MALLOC(pointer);
+        if (g_pointer_raw.empty())g_pointer_raw.create(src.size(), CV_8UC1);
 
         cv::cuda::cvtColor(gpu, g_hsv, cv::COLOR_BGR2HSV);
         cv::cuda::split(g_hsv, g_HSV);
 
-        ifr::cuda::findPointer(g_HSV[2], has_bin ? &g_bin : nullptr, g_pointer);
-
+        ifr::cuda::findPointer(g_HSV[2], has_bin ? &g_bin : nullptr, g_pointer_raw);
+        filter2->apply(g_pointer_raw, g_pointer);
 
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(c_pointer, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -232,7 +235,7 @@ private:
         double size_green = 0, size_red = 0;
         for (const auto &contour: contours) {
             double area = cv::contourArea(contour);
-            if (area > 300 || area < 5)continue;
+            if (area > 500 || area < 5)continue;
             cv::Rect rect = cv::boundingRect(contour);
 
             double aspectRatio = static_cast<double>(rect.width) / rect.height;
@@ -321,54 +324,137 @@ public:
         PRINT_T(1, 5);
     }
 
-    cv::Point2d move_step() {
-        if (red.x < 0 || red.y < 0)return {0, 0};
+private:
+    int step = -1;///< red当前目标
+    cv::Point2d end;///< red最终位置
+    const double min_distance = 20.0; ///< red到达判定
+    const double min_distance2 = std::pow(min_distance, 2); ///< red到达判定
+private:
+
+    /**
+     * @brief 计算移动向量
+     * @param go 目标点
+     * @param now 当前点
+     * @param mask 可用路径遮罩
+     * @param[out] finish 是否完成
+     */
+    inline auto calcMove(cv::Point2d go, const cv::Point2d &now, const cv::Mat &mask, bool &finish) const {
+        static constexpr const auto r90 = 90 * CV_PI / 180.0;
+        go -= now;
+        if ((finish = (go.ddot(go) < min_distance2)))return go;
+        go /= cv::norm(go);
+        cv::Rect rect{0, 0, mask.cols, mask.rows};
+        if (!now.inside(rect))return go * min_distance; //不太可能
+
+        const double angle = std::atan2(go.y - now.y, go.x - now.x) + r90;
+        const auto in_path = mask.at<uchar>(int(now.y), int(now.x));
+        const cv::Point2d detla{std::cos(angle), std::sin(angle)};
+
+        int dis_l = -1, dis_r = -1;
+        for (int i = 0, max_val = mask.size().area(); i < max_val; i++) {//从now开始向垂直于前进方向两侧寻找第一个不同点
+            if (dis_l < 0) {
+                auto p1 = now - (i * detla);
+                if (p1.inside(rect) && mask.at<uchar>(int(p1.y), int(p1.x)) != in_path) {
+                    dis_l = i;
+                    if (!in_path)break;//now 本身在黑条上
+                }
+            }
+            if (dis_r < 0) {
+                auto p2 = now + (i * detla);
+                if (p2.inside(rect) && mask.at<uchar>(int(p2.y), int(p2.x)) != in_path) {
+                    dis_r = i;
+                    if (!in_path)break;//now 本身在黑条上
+                }
+            }
+            if (dis_l >= 0 && dis_r >= 0)break;
+        }
+
+        if (in_path) {//在路径中, 以小纠正得到结果
+            if (dis_l >= 0 && dis_r >= 0) {
+                auto fix = (dis_l < dis_r ? 1 : -1) * detla;
+                go = go * 4 + fix;
+            }
+        } else {//不在路径中, 以大偏移量最快返回
+            if (dis_l >= 0 || dis_r >= 0) {
+                static constexpr const auto max_val = std::numeric_limits<int>::max();
+                if (dis_l < 0)dis_l = max_val;
+                if (dis_r < 0)dis_r = max_val;
+                auto fix = (dis_l < dis_r ? -1 : 1) * detla;
+                go = fix * 2 + go;
+            }
+        }
+        go /= cv::norm(go) * min_distance;
+        return go;
+    }
+
+    /// red 帮助函数
+    /// 尝试计算到目标点的距离, 并自动更新step
+    cv::Point2d move_step(bool &finish) {
         if (step < 0) {
             end = red;
             step = 0;
         }
-        while (step < path.size()) {
+        if (step < path.size()) {
+#if 0
+            cv::Point2d go = calcMove(path[step], red, c_bin, finish);
+#else
             cv::Point2d go = path[step];
             go -= red;
-            if (go.ddot(go) < min_distance)
-                step++;
-            else
-                return go;
+            go = -go;
+            finish = go.ddot(go) < min_distance2;
+#endif
+            if (finish) step++;
+            finish = false;//单步完成不是全部完成
+            return go;
         }
-        return end - red;
+        auto go = end - red;
+        finish = go.ddot(go) < min_distance;
+        return go;
     }
 
+    /// green 帮助函数
     CV_NODISCARD_STD cv::Point2d follow() const {
         if (red.x < 0 || red.y < 0 || green.x < 0 || green.y < 0)return {};
         return green - red;
     }
 
+public:
+    /// @brief 执行一次绿色激光笔的代码逻辑: 计算移动+设置数据
     void do_green() {
         auto go = follow();
         pkg_move.set(go.x, go.y);
         IFR_LOG_STREAM("DO", go << ", red = " << red << ", green = " << green << ", path = " << path.size());
-        serial->writeT(pkg_move);
     }
 
+    /// @brief 执行一次红色激光笔的代码逻辑: 计算移动+串口发送
     bool do_red() {
         cv::Point2d go;
         bool finish = false;
         if (red.x < 0 || red.y < 0) {
         } else {
-            go = move_step();
-            finish = go.ddot(go) < min_distance;
-            if (finish)step = -1;
+            go = move_step(finish);
+            if (finish) {
+                step = -1;
+                go = {0, 0};
+            }
         }
         pkg_move.set(go.x, go.y);
-        serial->writeT(pkg_move);
         IFR_LOG_STREAM("DO",
                        go << ", red = " << red << ", green = " << green << ", path = " << path.size() << ", finish = "
                           << (finish ? "true" : "false") << ", step = " << step);
         return finish;
     }
 
+    void sendMove() {
+        serial->writeT(pkg_move);
+    }
+
+    void resetMove() {
+        pkg_move.set(0, 0);
+    }
+
 private:
-    std::string read_buf;
+    std::string read_buf;///串口缓冲
 public:
     /**
      * 尝试读取字符串, 并将maps中对应值设为true
@@ -392,12 +478,13 @@ public:
                     }
                 }
             }
-            if (read_buf.size() > 256)read_buf = "";
+            if (read_buf.size() > 256)read_buf = "";//过长保护
         }
     }
 };
 
-
+/// @brief 执行完整代码逻辑
+/// @details 建立 相机、串口、处理器 之间的桥接
 void run() {
     ifr::Camera camera(2000, false, 100);
     camera.initCamera();
@@ -411,6 +498,8 @@ void run() {
             {"2_9kitey3yzpd", &is_red},
             {"3_yp4lmg19kbc", &is_stop},
     };
+
+    int64 lstTick = 0, now;
     while (true) {
         PGX_FRAME_BUFFER pFrameBuffer;
 
@@ -424,19 +513,23 @@ void run() {
             handler.handler(camera.memMapPool, src, gpu_src, true);
 
             handler.tryRead(keyword);
-            if ((is_red && is_green) || is_stop)is_red = is_green = is_stop = false;
+            if ((is_red && is_green) || is_stop) {
+                handler.resetMove();
+                is_red = is_green = is_stop = false;
+            }
+            is_red = true;
             if (is_red) {
                 if (handler.do_red())is_red = false;
             }
             if (is_green) {
                 handler.do_green();
             }
-//            IFR_LOG_STREAM("Main", handler.path);
         }
         IFR_GX_CHECK(GXQBuf(camera.m_hDevice, pFrameBuffer));
 
-        SLEEP(SLEEP_TIME(10.0 / 1000));
-//        cv::waitKey(10);
+        while (double((now = cv::getTickCount()) - lstTick) / cv::getTickFrequency() * 1000 < 10.0);
+        handler.sendMove();
+        lstTick = now;
     }
 }
 
